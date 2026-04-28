@@ -260,7 +260,7 @@ def _entity_description(field: str) -> SensorEntityDescription:
         key=field,
         device_class=_device_class(kind),
         native_unit_of_measurement=_unit(unit),
-        state_class=_state_class(kind),
+        state_class=_state_class(kind, field),
     )
 
 
@@ -276,10 +276,10 @@ def _device_class(kind: str) -> SensorDeviceClass | str | None:
     return mapping.get(kind)
 
 
-def _state_class(kind: str) -> str | None:
+def _state_class(kind: str, field: str) -> str | None:
     if kind in {"current", "frequency", "power", "voltage", "battery"}:
         return "measurement"
-    if kind == "energy":
+    if kind == "energy" and _is_cumulative_energy_field(field):
         return "total_increasing"
     return None
 

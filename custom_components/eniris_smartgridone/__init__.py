@@ -78,7 +78,7 @@ def _async_register_controller_device(
     entry: EnirisConfigEntry,
     controller: Any,
 ) -> None:
-    """Create the controller hub device even when it has no own entities."""
+    """Create the controller hub target for child device via_device links."""
     from homeassistant.helpers import device_registry as dr
 
     device = controller.device
@@ -91,6 +91,8 @@ def _async_register_controller_device(
     }
     if device.model:
         device_info["model"] = device.model
+    if hasattr(dr, "DeviceEntryType"):
+        device_info["entry_type"] = dr.DeviceEntryType.SERVICE
     device_registry.async_get_or_create(**device_info)
 
 
