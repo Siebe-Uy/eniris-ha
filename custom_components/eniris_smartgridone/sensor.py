@@ -28,6 +28,10 @@ from .coordinator import EnirisDataUpdateCoordinator
 from .models import EnirisController, EnirisDevice
 from .telemetry import SensorKey
 
+ENERGY_DIRECTION_IMPORT = "imported"
+ENERGY_DIRECTION_EXPORT = "exported"
+EnergySourceKey = tuple[SensorKey, str]
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -37,7 +41,7 @@ async def async_setup_entry(
     """Set up Eniris SmartgridOne sensor entities."""
     coordinator: EnirisDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
     known_keys: set[SensorKey] = set()
-    known_energy_keys: set[SensorKey] = set()
+    known_energy_keys: set[EnergySourceKey] = set()
 
     @callback
     def add_new_entities() -> None:
@@ -49,8 +53,8 @@ async def async_setup_entry(
         known_energy_keys.update(new_energy_keys)
         entities = [EnirisSensor(coordinator, entry.entry_id, key) for key in new_keys]
         entities.extend(
-            EnirisIntegratedEnergySensor(coordinator, entry.entry_id, key)
-            for key in new_energy_keys
+            EnirisIntegratedEnergySensor(coordinator, entry.entry_id, key, direction)
+            for key, direction in new_energy_keys
         )
         async_add_entities(entities)
 
@@ -139,14 +143,16 @@ class EnirisIntegratedEnergySensor(
         coordinator: EnirisDataUpdateCoordinator,
         entry_id: str,
         source_key: SensorKey,
+        direction: str,
     ) -> None:
         """Initialize the derived energy sensor."""
         super().__init__(coordinator)
         self._source_key = source_key
-        self._attr_unique_id = f"{entry_id}_{source_key.unique_suffix}_integrated_energy"
-        self._attr_name = f"{_humanize_field(source_key.field)} Energy {_retention_suffix(source_key.source_key) or ''}".strip()
+        self._direction = direction
+        self._attr_unique_id = f"{entry_id}_{source_key.unique_suffix}_{direction}_integrated_energy"
+        self._attr_name = f"{direction.title()} Energy {_retention_suffix(source_key.source_key) or ''}".strip()
         self.entity_description = SensorEntityDescription(
-            key=f"{source_key.field}_integrated_energy",
+            key=f"{source_key.field}_{direction}_integrated_energy",
             device_class=SensorDeviceClass.ENERGY,
             native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
             state_class="total_increasing",
@@ -194,6 +200,7 @@ class EnirisIntegratedEnergySensor(
         source = self.coordinator.data.sensors.get(self._source_key)
         return {
             "integration_method": "left_riemann_sum",
+            "energy_direction": self._direction,
             "source_field": self._source_key.field,
             "source_retention_policy": source.source.retention_policy if source else None,
             "last_source_sample": self._last_sample.isoformat() if self._last_sample else None,
@@ -210,7 +217,7 @@ class EnirisIntegratedEnergySensor(
         sample_time = _parse_timestamp(source.timestamp) or dt_util.utcnow()
         if self._last_sample is not None and sample_time > self._last_sample:
             try:
-                power_w = max(0.0, float(source.value))
+                power_w = _directional_power(float(source.value), self._direction)
             except (TypeError, ValueError):
                 power_w = 0.0
             elapsed_hours = (sample_time - self._last_sample).total_seconds() / 3600
@@ -297,17 +304,27 @@ def _unit(unit: str | None) -> str | None:
     return mapping.get(unit)
 
 
-def _energy_helper_source_keys(coordinator: EnirisDataUpdateCoordinator) -> set[SensorKey]:
+def _energy_helper_source_keys(coordinator: EnirisDataUpdateCoordinator) -> set[EnergySourceKey]:
     """Return power sensor keys that need a derived cumulative energy entity."""
     return {
-        key
+        (key, direction)
         for key in coordinator.data.sensors
         if _is_integrable_power_field(key.field)
+        for direction in (ENERGY_DIRECTION_IMPORT, ENERGY_DIRECTION_EXPORT)
     }
 
 
 def _is_integrable_power_field(field: str) -> bool:
-    return field.startswith("actualPower") and field.endswith("_W")
+    return field == "actualPowerTot_W"
+
+
+def _directional_power(power_w: float, direction: str) -> float:
+    """Return the positive power component for an import/export direction."""
+    if direction == ENERGY_DIRECTION_IMPORT:
+        return max(0.0, power_w)
+    if direction == ENERGY_DIRECTION_EXPORT:
+        return max(0.0, -power_w)
+    return 0.0
 
 
 def _is_cumulative_energy_field(field: str) -> bool:
