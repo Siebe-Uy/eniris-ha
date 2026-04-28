@@ -1,6 +1,6 @@
 # Eniris SmartgridOne for Home Assistant
 
-Warning: this is a community integration and is not officially supported by Eniris. If you need help, please create an issue on GitHub. Do not contact Eniris support for issues with this integration.
+⚠️ Warning: this is a community integration and is not officially supported by Eniris. If you need help, please create an issue on GitHub. Do not contact Eniris support for issues with this integration.
 
 This custom Home Assistant integration connects to the Eniris cloud API, discovers SmartgridOne controllers linked to your Eniris account, and exposes controller devices such as power meters, inverters, batteries, and optimizers as Home Assistant devices and entities.
 
