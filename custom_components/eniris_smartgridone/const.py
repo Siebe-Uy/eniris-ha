@@ -20,6 +20,8 @@ API_BASE_URL = "https://api.eniris.be"
 
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_USERNAME = "username"
+CONF_CONTROLLER_ID = "controller_id"
+CONF_CONTROLLER_SERIAL = "controller_serial"
 
 DEFAULT_SCAN_INTERVAL = timedelta(seconds=60)
 

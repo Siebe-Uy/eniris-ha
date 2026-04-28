@@ -79,6 +79,24 @@ class EnirisDevice:
         return str(value) if value else None
 
     @property
+    def serial_number(self) -> str:
+        """Return the best serial number for this device."""
+        value = _first_value(
+            self.properties,
+            "serialNumber",
+            "serial_number",
+            "serial",
+            "serialNo",
+            "controllerSerial",
+            "controller_serial",
+            "hardwareSerial",
+            "hardware_serial",
+        )
+        if not value:
+            value = _nested_value(self.properties, ("info", "serialNumber"))
+        return str(value or self.node_id)
+
+    @property
     def is_controller(self) -> bool:
         """Return true if this device looks like a SmartgridOne controller."""
         haystack = " ".join(
@@ -178,7 +196,12 @@ class EnirisController:
     @property
     def name(self) -> str:
         """Return a display name."""
-        return self.device.name
+        return self.serial_number
+
+    @property
+    def serial_number(self) -> str:
+        """Return the controller serial number."""
+        return self.device.serial_number
 
 
 def parse_devices(payload: JsonObject) -> list[EnirisDevice]:

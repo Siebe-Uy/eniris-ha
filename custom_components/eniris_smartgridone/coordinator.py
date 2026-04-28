@@ -42,14 +42,20 @@ class EnirisData:
 class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
     """Coordinate Eniris discovery and telemetry polling."""
 
-    def __init__(self, hass: HomeAssistant, api_client: EnirisApiClient) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api_client: EnirisApiClient,
+        controller_id: str,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
-            name=DOMAIN,
+            name=f"{DOMAIN}_{controller_id}",
             update_interval=DEFAULT_SCAN_INTERVAL,
         )
         self.api_client = api_client
+        self.controller_id = controller_id
 
     async def _async_update_data(self) -> EnirisData:
         """Fetch latest Eniris metadata and telemetry."""
@@ -60,19 +66,36 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
             device_payload = await self.api_client.devices()
             devices = parse_devices(device_payload or {})
             controllers = group_controllers(devices)
-            sensors = await self._async_fetch_sensor_values(devices)
+            controller = self._controller_from_discovery(controllers)
+            if controller is None:
+                raise UpdateFailed(f"Controller {self.controller_id} was not found")
+            controller_devices = [controller.device, *controller.children]
+            sensors = await self._async_fetch_sensor_values(controller_devices)
         except EnirisRateLimitError as err:
             raise UpdateFailed(f"Eniris rate limit reached: {err}") from err
         except EnirisApiError as err:
             raise UpdateFailed(f"Error communicating with Eniris: {err}") from err
 
         return EnirisData(
-            controllers=controllers,
+            controllers=[controller],
             sensors=sensors,
             companies=companies,
             roles=roles,
             monitors=monitors,
         )
+
+    def _controller_from_discovery(
+        self, controllers: list[EnirisController]
+    ) -> EnirisController | None:
+        """Return the controller for this config entry."""
+        for controller in controllers:
+            if self.controller_id in {
+                controller.id,
+                controller.serial_number,
+                str(controller.device.id),
+            }:
+                return controller
+        return None
 
     async def _async_fetch_sensor_values(
         self, devices: list[EnirisDevice]

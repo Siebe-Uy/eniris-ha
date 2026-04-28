@@ -13,6 +13,7 @@
     "error": {
       "cannot_connect": "Could not connect to Eniris. Please try again later.",
       "invalid_auth": "Invalid Eniris credentials.",
+      "no_controllers": "No SmartgridOne controllers were found for this Eniris account.",
       "two_factor_required": "This Eniris account requires two-factor authentication, which is not supported by this integration yet.",
       "unknown": "Unexpected error"
     },

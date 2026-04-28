@@ -20,6 +20,7 @@ class TestEnirisModels(TestCase):
                             "nodeId": "controller-1",
                             "nodeType": "smartgridoneController",
                             "name": "Main Controller",
+                            "serialNumber": "OM12345",
                         },
                         "userRights": {"propertyEditabilities": {}, "monitorManagement": False},
                     },
@@ -41,7 +42,8 @@ class TestEnirisModels(TestCase):
         controllers = group_controllers(devices)
 
         self.assertEqual(len(controllers), 1)
-        self.assertEqual(controllers[0].name, "Main Controller")
+        self.assertEqual(controllers[0].name, "OM12345")
+        self.assertEqual(controllers[0].serial_number, "OM12345")
         self.assertEqual([child.name for child in controllers[0].children], ["Solar Inverter"])
 
     def test_telemetry_sources_require_query_scope(self) -> None:
