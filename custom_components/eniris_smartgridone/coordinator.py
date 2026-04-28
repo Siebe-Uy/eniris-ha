@@ -69,7 +69,9 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
             controller = self._controller_from_discovery(controllers)
             if controller is None:
                 raise UpdateFailed(f"Controller {self.controller_id} was not found")
-            controller_devices = [controller.device, *controller.children]
+            controller_devices = [
+                device for device in controller.children if device.should_expose_as_device
+            ]
             sensors = await self._async_fetch_sensor_values(controller_devices)
         except EnirisRateLimitError as err:
             raise UpdateFailed(f"Eniris rate limit reached: {err}") from err
@@ -129,7 +131,8 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
             if statement_id >= len(requests):
                 continue
             device, source, _query = requests[statement_id]
-            for field in TELEMETRY_FIELDS:
+            fields = source.fields or tuple(TELEMETRY_FIELDS)
+            for field in fields:
                 query = build_query(source, [field])
                 if query is not None:
                     retry_requests.append((device, source, query))

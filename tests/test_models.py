@@ -77,3 +77,94 @@ class TestEnirisModels(TestCase):
         self.assertEqual(device.telemetry_sources[0].measurement, "solarInverterMetrics")
         self.assertEqual(device.telemetry_sources[0].retention_policy, "rp_one_m")
         self.assertEqual(device.telemetry_sources[0].database, "site_telemetry")
+
+    def test_real_device_metadata_uses_node_influx_series(self) -> None:
+        """Real Eniris node metadata exposes telemetry via nodeInfluxSeries."""
+        device = parse_devices(
+            {
+                "device": [
+                    {
+                        "id": 10,
+                        "lastUpdate": "2026-04-28T10:39:37Z",
+                        "properties": {
+                            "name": "LGF Digital Smart Meter E360",
+                            "nodeId": "VdqEOEgHDokACOOZ-LGF-E360",
+                            "nodeParentsIds": ["M1S240821VZLL5E230D_site_0"],
+                            "nodeType": "powerMeter",
+                            "info": {
+                                "manufacturer": "LGF",
+                                "model": "Digital Smart Meter",
+                                "serialNumber": "E360",
+                            },
+                            "nodeInfluxSeries": [
+                                {
+                                    "database": "beauvent",
+                                    "fields": ["getMeasTime_s"],
+                                    "measurement": "getMeasStats",
+                                    "retentionPolicy": "rp_one_m",
+                                    "tags": {"nodeId": "VdqEOEgHDokACOOZ-LGF-E360"},
+                                },
+                                {
+                                    "database": "beauvent",
+                                    "fields": [
+                                        "actualPowerTot_W",
+                                        "actualPowerL1_W",
+                                        "voltageL1N_V",
+                                        "currentL1_A",
+                                    ],
+                                    "measurement": "submeteringMetrics",
+                                    "retentionPolicy": "rp_one_s",
+                                    "tags": {
+                                        "gatewayMAC": "VdqEOEgHDokACOOZ",
+                                        "nodeId": "VdqEOEgHDokACOOZ-LGF-E360",
+                                    },
+                                },
+                            ],
+                        },
+                        "userRights": {"propertyEditabilities": {}, "monitorManagement": False},
+                    }
+                ]
+            }
+        )[0]
+
+        self.assertEqual(device.name, "LGF Digital Smart Meter E360")
+        self.assertEqual(device.manufacturer, "LGF")
+        self.assertEqual(device.model, "Digital Smart Meter")
+        self.assertEqual(device.controller_node_id, "M1S240821VZLL5E230D_site_0")
+        self.assertTrue(device.should_expose_as_device)
+        self.assertEqual(len(device.telemetry_sources), 1)
+        self.assertEqual(device.telemetry_sources[0].fields, ("actualPowerTot_W", "actualPowerL1_W", "voltageL1N_V", "currentL1_A"))
+
+    def test_infrastructure_nodes_are_not_children(self) -> None:
+        """Controller site and switchboard nodes should not be exposed as devices."""
+        devices = parse_devices(
+            {
+                "device": [
+                    {
+                        "id": 1,
+                        "lastUpdate": "2026-04-28T09:00:00Z",
+                        "properties": {
+                            "nodeId": "M1S240821VZLL5E230D_site_0",
+                            "nodeType": "smartgridControllerSite",
+                            "name": "M1S240821VZLL5E230D_site_0",
+                        },
+                        "userRights": {"propertyEditabilities": {}, "monitorManagement": False},
+                    },
+                    {
+                        "id": 2,
+                        "lastUpdate": "2026-04-28T09:00:00Z",
+                        "properties": {
+                            "nodeId": "switchboard",
+                            "nodeType": "switchboard",
+                            "nodeParentsIds": ["M1S240821VZLL5E230D_site_0"],
+                        },
+                        "userRights": {"propertyEditabilities": {}, "monitorManagement": False},
+                    },
+                ]
+            }
+        )
+
+        controllers = group_controllers(devices)
+
+        self.assertEqual(controllers[0].serial_number, "M1S240821VZLL5E230D")
+        self.assertEqual(controllers[0].children, [])

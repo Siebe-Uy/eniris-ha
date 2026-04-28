@@ -41,6 +41,20 @@ class TestApiAndTelemetry(TestCase):
             },
         )
 
+    def test_build_query_limits_to_source_fields(self) -> None:
+        """Queries only request fields listed in nodeInfluxSeries."""
+        source = TelemetrySource(
+            measurement="submeteringMetrics",
+            retention_policy="rp_one_s",
+            database="beauvent",
+            tags={"nodeId": "meter-1"},
+            fields=("actualPowerTot_W",),
+        )
+
+        query = build_query(source, ["actualPowerTot_W", "voltageL1N_V"])
+
+        self.assertEqual(query["select"], ["actualPowerTot_W"])
+
     def test_parse_telemetry_response_extracts_latest_values(self) -> None:
         """Telemetry responses are converted into dynamic sensor values."""
         device = parse_devices(

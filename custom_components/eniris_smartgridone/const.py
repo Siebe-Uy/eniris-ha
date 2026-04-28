@@ -26,6 +26,7 @@ CONF_CONTROLLER_SERIAL = "controller_serial"
 DEFAULT_SCAN_INTERVAL = timedelta(seconds=60)
 
 RETENTION_POLICIES = ("rp_one_s", "rp_one_m")
+EXCLUDED_DEVICE_NODE_TYPES = {"smartgridControllerSite", "switchboard"}
 
 ATTR_CONTROLLER_ID = "controller_id"
 ATTR_DEVICE_ID = "eniris_device_id"
@@ -34,6 +35,9 @@ ATTR_RETENTION_POLICY = "retention_policy"
 
 POWER_FIELDS = {
     "actualPowerTot_W": ("W", "power"),
+    "actualPowerL1_W": ("W", "power"),
+    "actualPowerL2_W": ("W", "power"),
+    "actualPowerL3_W": ("W", "power"),
     "childrenStoragePower_W": ("W", "power"),
     "childrenProducedPower_W": ("W", "power"),
     "childrenEVPower_W": ("W", "power"),

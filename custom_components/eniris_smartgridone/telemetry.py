@@ -41,6 +41,10 @@ class SensorValue:
 
 def build_query(source: TelemetrySource, fields: list[str]) -> dict[str, Any] | None:
     """Build one latest-value telemetry query."""
+    selected_fields = [field for field in fields if source.fields is None or field in source.fields]
+    if not selected_fields:
+        return None
+
     from_clause: dict[str, Any] = {"measurement": source.measurement}
     if source.database:
         from_clause["database"] = source.database
@@ -54,7 +58,7 @@ def build_query(source: TelemetrySource, fields: list[str]) -> dict[str, Any] | 
         return None
 
     query: dict[str, Any] = {
-        "select": fields,
+        "select": selected_fields,
         "from": from_clause,
         "orderBy": "DESC",
         "limit": 1,

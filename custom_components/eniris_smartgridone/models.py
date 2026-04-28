@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import re
 from typing import Any
 
-from .const import DEFAULT_MEASUREMENTS, RETENTION_POLICIES
+from .const import DEFAULT_MEASUREMENTS, EXCLUDED_DEVICE_NODE_TYPES, RETENTION_POLICIES, TELEMETRY_FIELDS
 
 
 JsonObject = dict[str, Any]
@@ -21,6 +21,7 @@ class TelemetrySource:
     tags: dict[str, str]
     database: str | None = None
     namespace: dict[str, Any] | None = None
+    fields: tuple[str, ...] | None = None
 
     @property
     def key(self) -> str:
@@ -71,12 +72,16 @@ class EnirisDevice:
     def manufacturer(self) -> str | None:
         """Return manufacturer metadata if available."""
         value = _first_value(self.properties, "manufacturer", "brand", "vendor")
+        if not value:
+            value = _nested_value(self.properties, ("info", "manufacturer"))
         return str(value) if value else None
 
     @property
     def model(self) -> str | None:
         """Return model metadata if available."""
         value = _first_value(self.properties, "model", "modelName", "deviceModel")
+        if not value:
+            value = _nested_value(self.properties, ("info", "model"))
         return str(value) if value else None
 
     @property
@@ -139,7 +144,16 @@ class EnirisDevice:
         )
         if not value:
             value = _nested_value(self.properties, ("controller", "nodeId"))
+        if not value:
+            parent_ids = self.properties.get("nodeParentsIds")
+            if isinstance(parent_ids, list) and parent_ids:
+                value = parent_ids[0]
         return str(value) if value else None
+
+    @property
+    def should_expose_as_device(self) -> bool:
+        """Return whether this node should become a HA device with entities."""
+        return self.node_type not in EXCLUDED_DEVICE_NODE_TYPES and not self.is_controller
 
     @property
     def tags(self) -> dict[str, str]:
@@ -158,6 +172,10 @@ class EnirisDevice:
     @property
     def telemetry_sources(self) -> list[TelemetrySource]:
         """Return possible telemetry sources for this device."""
+        explicit = _node_influx_series_sources(self.properties)
+        if explicit:
+            return explicit
+
         explicit = _explicit_sources(self.properties)
         if explicit:
             return explicit
@@ -244,6 +262,8 @@ def group_controllers(devices: list[EnirisDevice]) -> list[EnirisController]:
 
     for device in devices:
         if device.node_id in controllers:
+            continue
+        if not device.should_expose_as_device:
             continue
         controller = _controller_for_device(device, controllers)
         if controller is not None:
@@ -342,9 +362,48 @@ def _explicit_sources(properties: JsonObject) -> list[TelemetrySource]:
                 tags={str(key): str(value) for key, value in raw_tags.items()},
                 database=str(raw["database"]) if raw.get("database") else None,
                 namespace=raw.get("namespace") if isinstance(raw.get("namespace"), dict) else None,
+                fields=_telemetry_fields(raw.get("fields")),
             )
         )
     return sources
+
+
+def _node_influx_series_sources(properties: JsonObject) -> list[TelemetrySource]:
+    """Return telemetry sources from Eniris nodeInfluxSeries metadata."""
+    raw_sources = properties.get("nodeInfluxSeries")
+    if not isinstance(raw_sources, list):
+        return []
+
+    sources: list[TelemetrySource] = []
+    for raw in raw_sources:
+        if not isinstance(raw, dict):
+            continue
+        retention_policy = raw.get("retentionPolicy")
+        measurement = raw.get("measurement")
+        database = raw.get("database")
+        if retention_policy not in RETENTION_POLICIES or not measurement or not database:
+            continue
+        fields = _telemetry_fields(raw.get("fields"))
+        if not fields:
+            continue
+        raw_tags = raw.get("tags") if isinstance(raw.get("tags"), dict) else {}
+        sources.append(
+            TelemetrySource(
+                measurement=str(measurement),
+                retention_policy=str(retention_policy),
+                database=str(database),
+                tags={str(key): str(value) for key, value in raw_tags.items() if value is not None},
+                fields=fields,
+            )
+        )
+    return sources
+
+
+def _telemetry_fields(raw_fields: Any) -> tuple[str, ...] | None:
+    if not isinstance(raw_fields, list):
+        return None
+    fields = tuple(str(field) for field in raw_fields if field in TELEMETRY_FIELDS)
+    return fields or None
 
 
 def _measurements_from_properties(properties: JsonObject) -> tuple[str, ...]:
