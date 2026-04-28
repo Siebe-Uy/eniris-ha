@@ -109,6 +109,8 @@ class TestEnirisModels(TestCase):
                                     "fields": [
                                         "actualPowerTot_W",
                                         "actualPowerL1_W",
+                                        "importedAbsEnergyTot_Wh",
+                                        "exportedEnergyDeltaTot_Wh",
                                         "voltageL1N_V",
                                         "currentL1_A",
                                     ],

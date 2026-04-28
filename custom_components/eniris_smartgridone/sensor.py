@@ -301,21 +301,13 @@ def _energy_helper_source_keys(coordinator: EnirisDataUpdateCoordinator) -> set[
     """Return power sensor keys that need a derived cumulative energy entity."""
     return {
         key
-        for key, sensor in coordinator.data.sensors.items()
+        for key in coordinator.data.sensors
         if _is_integrable_power_field(key.field)
-        and not _device_has_cumulative_energy(sensor.device)
     }
 
 
 def _is_integrable_power_field(field: str) -> bool:
     return field.startswith("actualPower") and field.endswith("_W")
-
-
-def _device_has_cumulative_energy(device: EnirisDevice) -> bool:
-    for source in device.telemetry_sources:
-        if source.fields and any(_is_cumulative_energy_field(field) for field in source.fields):
-            return True
-    return False
 
 
 def _is_cumulative_energy_field(field: str) -> bool:

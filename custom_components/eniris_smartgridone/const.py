@@ -51,21 +51,7 @@ POWER_FIELDS = {
     "exportLimit_W": ("W", "power"),
 }
 
-ENERGY_FIELDS = {
-    "importedAbsEnergyTot_Wh": ("Wh", "energy"),
-    "exportedAbsEnergyTot_Wh": ("Wh", "energy"),
-    "producedAbsEnergyTot_Wh": ("Wh", "energy"),
-    "consumedAbsEnergyTot_Wh": ("Wh", "energy"),
-    "chargedAbsEnergyTot_Wh": ("Wh", "energy"),
-    "dischargedAbsEnergyTot_Wh": ("Wh", "energy"),
-    "importedEnergyDeltaTot_Wh": ("Wh", "energy"),
-    "exportedEnergyDeltaTot_Wh": ("Wh", "energy"),
-    "childrenStorageChargedEnergyDeltaTot_Wh": ("Wh", "energy"),
-    "childrenStorageDischargedEnergyDeltaTot_Wh": ("Wh", "energy"),
-    "producedEnergyDeltaTot_Wh": ("Wh", "energy"),
-    "chargedEnergyDeltaTot_Wh": ("Wh", "energy"),
-    "dischargedEnergyDeltaTot_Wh": ("Wh", "energy"),
-}
+ENERGY_FIELDS: dict[str, tuple[str | None, str]] = {}
 
 OTHER_FIELDS = {
     "currentL1_A": ("A", "current"),

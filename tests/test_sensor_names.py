@@ -107,7 +107,6 @@ class TestSensorNames(TestCase):
         _install_homeassistant_stubs()
         with patch.dict(sys.modules, {"custom_components.eniris_smartgridone.coordinator": MagicMock()}):
             from custom_components.eniris_smartgridone.sensor import (
-                _entity_description,
                 _is_integrable_power_field,
                 _sensor_name,
             )
@@ -125,9 +124,3 @@ class TestSensorNames(TestCase):
             )
             self.assertTrue(_is_integrable_power_field("actualPowerTot_W"))
             self.assertFalse(_is_integrable_power_field("powerSetpoint_W"))
-
-            self.assertEqual(
-                _entity_description("importedAbsEnergyTot_Wh").state_class,
-                "total_increasing",
-            )
-            self.assertIsNone(_entity_description("importedEnergyDeltaTot_Wh").state_class)

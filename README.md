@@ -47,8 +47,8 @@ Home Assistant's Energy dashboard requires cumulative energy sensors with state 
 
 This integration handles that automatically:
 
-- If Eniris provides cumulative energy fields such as `importedAbsEnergyTot_Wh` or `exportedAbsEnergyTot_Wh`, use those directly.
-- If a device only provides instantaneous power such as `actualPowerTot_W`, the integration creates a derived energy sensor using a Riemann-sum style integration.
+- Eniris-provided Wh totals and deltas are not exposed as entities.
+- Energy sensors are derived from `actualPower..._W` fields using a Riemann-sum style integration.
 - Derived energy sensors are attached to the same Home Assistant device as the source power sensor.
 - Derived values are restored across Home Assistant restarts.
 
