@@ -136,7 +136,7 @@ class TestEnirisModels(TestCase):
         self.assertEqual(device.telemetry_sources[0].fields, ("actualPowerTot_W", "actualPowerL1_W", "voltageL1N_V", "currentL1_A"))
 
     def test_infrastructure_nodes_are_not_children(self) -> None:
-        """Controller site and switchboard nodes should not be exposed as devices."""
+        """Controller, controller site, and switchboard nodes are hidden."""
         devices = parse_devices(
             {
                 "device": [
@@ -157,6 +157,16 @@ class TestEnirisModels(TestCase):
                             "nodeId": "switchboard",
                             "nodeType": "switchboard",
                             "nodeParentsIds": ["M1S240821VZLL5E230D_site_0"],
+                        },
+                        "userRights": {"propertyEditabilities": {}, "monitorManagement": False},
+                    },
+                    {
+                        "id": 3,
+                        "lastUpdate": "2026-04-28T09:00:00Z",
+                        "properties": {
+                            "nodeId": "M1S240821VZLL5E230D",
+                            "nodeType": "smartgridController",
+                            "name": "M1S240821VZLL5E230D",
                         },
                         "userRights": {"propertyEditabilities": {}, "monitorManagement": False},
                     },

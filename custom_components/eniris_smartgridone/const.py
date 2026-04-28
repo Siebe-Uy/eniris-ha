@@ -26,7 +26,7 @@ CONF_CONTROLLER_SERIAL = "controller_serial"
 DEFAULT_SCAN_INTERVAL = timedelta(seconds=60)
 
 RETENTION_POLICIES = ("rp_one_s", "rp_one_m")
-EXCLUDED_DEVICE_NODE_TYPES = {"smartgridControllerSite", "switchboard"}
+EXCLUDED_DEVICE_NODE_TYPES = {"smartgridController", "smartgridControllerSite", "switchboard"}
 
 ATTR_CONTROLLER_ID = "controller_id"
 ATTR_DEVICE_ID = "eniris_device_id"
