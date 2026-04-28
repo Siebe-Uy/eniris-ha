@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Eniris SmartgridOne",
+        "description": "Enter the Eniris account that has access to your SmartgridOne controllers.",
+        "data": {
+          "username": "Email address",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to Eniris. Please try again later.",
+      "invalid_auth": "Invalid Eniris credentials.",
+      "two_factor_required": "This Eniris account requires two-factor authentication, which is not supported by this integration yet.",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This Eniris account is already configured."
+    }
+  }
+}
