@@ -2,7 +2,7 @@
 
 from unittest import TestCase
 
-from custom_components.eniris_smartgridone.models import group_controllers, parse_devices
+from custom_components.eniris_smartgridone.models import clean_controller_serial, group_controllers, parse_devices
 
 
 class TestEnirisModels(TestCase):
@@ -45,6 +45,13 @@ class TestEnirisModels(TestCase):
         self.assertEqual(controllers[0].name, "OM12345")
         self.assertEqual(controllers[0].serial_number, "OM12345")
         self.assertEqual([child.name for child in controllers[0].children], ["Solar Inverter"])
+
+    def test_controller_serial_removes_site_suffix(self) -> None:
+        """Controller entry names should use the serial without site suffixes."""
+        self.assertEqual(
+            clean_controller_serial("M1S240821VZLL5E230D_site_0"),
+            "M1S240821VZLL5E230D",
+        )
 
     def test_telemetry_sources_require_query_scope(self) -> None:
         """Telemetry sources are only emitted when Eniris database metadata exists."""

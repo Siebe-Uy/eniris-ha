@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from .api import EnirisApiClient, EnirisAuthClient
 from .const import CONF_CONTROLLER_ID, CONF_CONTROLLER_SERIAL, CONF_REFRESH_TOKEN, DOMAIN, PLATFORMS
-from .models import group_controllers, parse_devices
+from .models import clean_controller_serial, group_controllers, parse_devices
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -34,12 +34,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnirisConfigEntry) -> bo
     if CONF_CONTROLLER_ID not in entry.data:
         if not await _async_migrate_account_entry(hass, entry, api_client):
             return False
+    elif entry.data[CONF_CONTROLLER_SERIAL] != clean_controller_serial(entry.data[CONF_CONTROLLER_SERIAL]):
+        _async_update_controller_serial(hass, entry, clean_controller_serial(entry.data[CONF_CONTROLLER_SERIAL]))
 
     controller_id = entry.data[CONF_CONTROLLER_ID]
     coordinator = EnirisDataUpdateCoordinator(hass, api_client, controller_id)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    _async_register_controller_device(hass, entry, coordinator.data.controllers[0])
 
     if entry.title != entry.data.get(CONF_CONTROLLER_SERIAL):
         hass.config_entries.async_update_entry(entry, title=entry.data[CONF_CONTROLLER_SERIAL])
@@ -54,6 +57,41 @@ async def async_unload_entry(hass: HomeAssistant, entry: EnirisConfigEntry) -> b
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
     return unload_ok
+
+
+def _async_update_controller_serial(
+    hass: HomeAssistant,
+    entry: EnirisConfigEntry,
+    controller_serial: str,
+) -> None:
+    """Normalize a controller config entry serial."""
+    hass.config_entries.async_update_entry(
+        entry,
+        title=controller_serial,
+        unique_id=controller_serial,
+        data={**entry.data, CONF_CONTROLLER_SERIAL: controller_serial},
+    )
+
+
+def _async_register_controller_device(
+    hass: HomeAssistant,
+    entry: EnirisConfigEntry,
+    controller: Any,
+) -> None:
+    """Create the controller hub device even when it has no own entities."""
+    from homeassistant.helpers import device_registry as dr
+
+    device = controller.device
+    device_registry = dr.async_get(hass)
+    device_info: dict[str, Any] = {
+        "config_entry_id": entry.entry_id,
+        "identifiers": {(DOMAIN, f"controller_{controller.id}")},
+        "manufacturer": device.manufacturer or "Eniris",
+        "name": controller.serial_number,
+    }
+    if device.model:
+        device_info["model"] = device.model
+    device_registry.async_get_or_create(**device_info)
 
 
 async def _async_migrate_account_entry(

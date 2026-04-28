@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any
 
 from .const import DEFAULT_MEASUREMENTS, RETENTION_POLICIES
@@ -94,7 +95,7 @@ class EnirisDevice:
         )
         if not value:
             value = _nested_value(self.properties, ("info", "serialNumber"))
-        return str(value or self.node_id)
+        return clean_controller_serial(str(value or self.node_id))
 
     @property
     def is_controller(self) -> bool:
@@ -244,12 +245,46 @@ def group_controllers(devices: list[EnirisDevice]) -> list[EnirisController]:
     for device in devices:
         if device.node_id in controllers:
             continue
-        controller_id = device.controller_node_id
-        controller = controllers.get(controller_id or "") or next(iter(controllers.values()), None)
+        controller = _controller_for_device(device, controllers)
         if controller is not None:
             controller.children.append(device)
 
     return list(controllers.values())
+
+
+def clean_controller_serial(value: str) -> str:
+    """Return the controller serial without Eniris site suffixes."""
+    return re.sub(r"_site_\d+$", "", value)
+
+
+def _controller_for_device(
+    device: EnirisDevice,
+    controllers: dict[str, EnirisController],
+) -> EnirisController | None:
+    """Find the most likely controller for a child device."""
+    controller_id = device.controller_node_id
+    if controller_id and controller_id in controllers:
+        return controllers[controller_id]
+
+    if len(controllers) == 1:
+        return next(iter(controllers.values()))
+
+    device_values = _flatten_strings(device.properties)
+    for controller in controllers.values():
+        candidates = {
+            controller.id,
+            controller.serial_number,
+            f"{controller.serial_number}_site_0",
+        }
+        if any(candidate and candidate in device_values for candidate in candidates):
+            return controller
+        if any(
+            candidate and any(candidate in value for value in device_values)
+            for candidate in candidates
+        ):
+            return controller
+
+    return None
 
 
 def _first_value(data: JsonObject, *keys: str) -> Any:
@@ -266,6 +301,24 @@ def _nested_value(data: JsonObject, path: tuple[str, ...]) -> Any:
             return None
         current = current.get(part)
     return current
+
+
+def _flatten_strings(value: Any) -> set[str]:
+    """Return all string-ish values from nested metadata."""
+    if isinstance(value, dict):
+        result: set[str] = set()
+        for key, item in value.items():
+            result.add(str(key))
+            result.update(_flatten_strings(item))
+        return result
+    if isinstance(value, list):
+        result: set[str] = set()
+        for item in value:
+            result.update(_flatten_strings(item))
+        return result
+    if value is None:
+        return set()
+    return {str(value)}
 
 
 def _explicit_sources(properties: JsonObject) -> list[TelemetrySource]:
