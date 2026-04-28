@@ -2,12 +2,12 @@
   "domain": "eniris_smartgridone",
   "name": "Eniris SmartgridOne",
   "after_dependencies": [],
-  "codeowners": [],
+  "codeowners": ["@Siebe-Uy"],
   "config_flow": true,
   "documentation": "https://api.eniris.be/docs/",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/home-assistant/core/issues",
+  "issue_tracker": "https://github.com/Siebe-Uy/eniris-ha/issues",
   "requirements": [],
   "version": "0.1.0"
 }
