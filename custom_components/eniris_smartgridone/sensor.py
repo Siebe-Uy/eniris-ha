@@ -6,13 +6,17 @@ from datetime import datetime
 import re
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription
+from homeassistant.components.sensor import (
+    RestoreSensor,
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfElectricCurrent, UnitOfElectricPotential, UnitOfEnergy, UnitOfFrequency, UnitOfPower
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
@@ -131,8 +135,7 @@ class EnirisSensor(CoordinatorEntity[EnirisDataUpdateCoordinator], SensorEntity)
 
 class EnirisIntegratedEnergySensor(
     CoordinatorEntity[EnirisDataUpdateCoordinator],
-    RestoreEntity,
-    SensorEntity,
+    RestoreSensor,
 ):
     """Derived energy sensor using a left Riemann sum over power."""
 
@@ -163,12 +166,15 @@ class EnirisIntegratedEnergySensor(
     async def async_added_to_hass(self) -> None:
         """Restore accumulated energy across Home Assistant restarts."""
         await super().async_added_to_hass()
-        state = await self.async_get_last_state()
-        if state is not None:
+        sensor_data = await self.async_get_last_sensor_data()
+        if sensor_data is not None and sensor_data.native_value is not None:
             try:
-                self._native_value = float(state.state)
+                self._native_value = float(sensor_data.native_value)
             except (TypeError, ValueError):
                 self._native_value = 0.0
+
+        state = await self.async_get_last_state()
+        if state is not None:
             restored_sample = state.attributes.get("last_source_sample")
             if isinstance(restored_sample, str):
                 self._last_sample = _parse_timestamp(restored_sample)

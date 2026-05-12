@@ -62,6 +62,10 @@ def _install_homeassistant_stubs() -> None:
     class RestoreEntity:
         pass
 
+    class RestoreSensor(RestoreEntity, SensorEntity):
+        pass
+
+    sensor.RestoreSensor = RestoreSensor
     sensor.SensorDeviceClass = SensorDeviceClass
     sensor.SensorEntity = SensorEntity
     sensor.SensorEntityDescription = SensorEntityDescription
