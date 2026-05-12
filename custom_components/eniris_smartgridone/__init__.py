@@ -5,7 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .api import EnirisApiClient, EnirisAuthClient, EnirisAuthError
-from .const import CONF_CONTROLLER_ID, CONF_CONTROLLER_SERIAL, CONF_REFRESH_TOKEN, DOMAIN, PLATFORMS
+from .const import (
+    CONF_CONTROLLER_ID,
+    CONF_CONTROLLER_SERIAL,
+    CONF_REFRESH_TOKEN,
+    CONF_REFRESH_TOKEN_CREATED_AT,
+    DOMAIN,
+    PLATFORMS,
+)
 from .models import clean_controller_serial, group_controllers, parse_devices
 
 if TYPE_CHECKING:
@@ -38,7 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnirisConfigEntry) -> bo
         _async_update_controller_serial(hass, entry, clean_controller_serial(entry.data[CONF_CONTROLLER_SERIAL]))
 
     controller_id = entry.data[CONF_CONTROLLER_ID]
-    coordinator = EnirisDataUpdateCoordinator(hass, api_client, controller_id)
+    coordinator = EnirisDataUpdateCoordinator(hass, entry, api_client, controller_id)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
@@ -144,6 +151,7 @@ async def _async_migrate_account_entry(
                 data={
                     CONF_USERNAME: entry.data[CONF_USERNAME],
                     CONF_REFRESH_TOKEN: entry.data[CONF_REFRESH_TOKEN],
+                    CONF_REFRESH_TOKEN_CREATED_AT: entry.data.get(CONF_REFRESH_TOKEN_CREATED_AT),
                     CONF_CONTROLLER_ID: controller.id,
                     CONF_CONTROLLER_SERIAL: controller.serial_number,
                 },

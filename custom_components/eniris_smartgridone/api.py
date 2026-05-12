@@ -65,6 +65,15 @@ class EnirisAuthClient:
         )
         return await self._read_token_response(response)
 
+    async def refresh_token(self, refresh_token: str) -> str:
+        """Return a renewed refresh token."""
+        response = await self._session.get(
+            f"{AUTH_BASE_URL}/auth/refreshtoken",
+            headers={"Authorization": f"Bearer {refresh_token}"},
+            timeout=30,
+        )
+        return await self._read_token_response(response)
+
     async def _read_token_response(self, response: ClientResponse) -> str:
         async with response:
             text = await response.text()
@@ -106,6 +115,18 @@ class EnirisApiClient:
                 return self._access_token
             self._access_token = await self._auth_client.access_token(self._refresh_token)
             return self._access_token
+
+    async def async_renew_refresh_token(self) -> str:
+        """Renew and store the refresh token used for future access tokens."""
+        async with self._token_lock:
+            self._refresh_token = await self._auth_client.refresh_token(self._refresh_token)
+            self._access_token = None
+            return self._refresh_token
+
+    def update_refresh_token(self, refresh_token: str) -> None:
+        """Replace the refresh token after another config entry renews it."""
+        self._refresh_token = refresh_token
+        self._access_token = None
 
     async def request(
         self,

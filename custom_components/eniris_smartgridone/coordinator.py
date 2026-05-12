@@ -3,15 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 import logging
 from typing import Any, TypeVar
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import EnirisApiClient, EnirisApiError, EnirisAuthError, EnirisRateLimitError
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, TELEMETRY_FIELDS
+from .const import (
+    CONF_REFRESH_TOKEN,
+    CONF_REFRESH_TOKEN_CREATED_AT,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    REFRESH_TOKEN_RENEW_INTERVAL,
+    TELEMETRY_FIELDS,
+)
 from .models import EnirisController, EnirisDevice, TelemetrySource, group_controllers, parse_devices
 from .telemetry import SensorKey, SensorValue, build_query, parse_telemetry_responses
 
@@ -46,6 +55,7 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
     def __init__(
         self,
         hass: HomeAssistant,
+        entry: ConfigEntry,
         api_client: EnirisApiClient,
         controller_id: str,
     ) -> None:
@@ -55,12 +65,14 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
             name=f"{DOMAIN}_{controller_id}",
             update_interval=DEFAULT_SCAN_INTERVAL,
         )
+        self.config_entry = entry
         self.api_client = api_client
         self.controller_id = controller_id
 
     async def _async_update_data(self) -> EnirisData:
         """Fetch latest Eniris metadata and telemetry."""
         try:
+            await self._async_renew_refresh_token_if_needed()
             companies = await self.api_client.companies()
             roles = await self.api_client.roles()
             monitors = await self.api_client.monitors()
@@ -88,6 +100,23 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
             roles=roles,
             monitors=monitors,
         )
+
+    async def _async_renew_refresh_token_if_needed(self) -> None:
+        """Renew the refresh token before Eniris' 14-day expiry window."""
+        token_created_at = self.config_entry.data.get(CONF_REFRESH_TOKEN_CREATED_AT)
+        if not _refresh_token_needs_renewal(token_created_at):
+            return
+
+        old_refresh_token = self.config_entry.data[CONF_REFRESH_TOKEN]
+        new_refresh_token = await self.api_client.async_renew_refresh_token()
+        token_created_at = _utcnow_iso()
+        _async_update_entries_sharing_refresh_token(
+            self.hass,
+            old_refresh_token,
+            new_refresh_token,
+            token_created_at,
+        )
+        _LOGGER.debug("Renewed Eniris refresh token")
 
     def _controller_from_discovery(
         self, controllers: list[EnirisController]
@@ -149,3 +178,47 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
 
 def _chunks(values: list[_T], size: int) -> list[list[_T]]:
     return [values[index : index + size] for index in range(0, len(values), size)]
+
+
+def _refresh_token_needs_renewal(token_created_at: Any) -> bool:
+    """Return true when a refresh token should be renewed proactively."""
+    if not isinstance(token_created_at, str):
+        return True
+
+    try:
+        created_at = datetime.fromisoformat(token_created_at)
+    except ValueError:
+        return True
+
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+
+    return datetime.now(UTC) - created_at >= REFRESH_TOKEN_RENEW_INTERVAL
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _async_update_entries_sharing_refresh_token(
+    hass: HomeAssistant,
+    old_refresh_token: str,
+    new_refresh_token: str,
+    token_created_at: str,
+) -> None:
+    """Persist a renewed token for all controller entries from the same login."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_REFRESH_TOKEN) != old_refresh_token:
+            continue
+
+        hass.config_entries.async_update_entry(
+            entry,
+            data={
+                **entry.data,
+                CONF_REFRESH_TOKEN: new_refresh_token,
+                CONF_REFRESH_TOKEN_CREATED_AT: token_created_at,
+            },
+        )
+        coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if coordinator is not None:
+            coordinator.api_client.update_refresh_token(new_refresh_token)

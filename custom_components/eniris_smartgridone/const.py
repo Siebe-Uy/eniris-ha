@@ -19,11 +19,13 @@ AUTH_BASE_URL = "https://authentication.eniris.be"
 API_BASE_URL = "https://api.eniris.be"
 
 CONF_REFRESH_TOKEN = "refresh_token"
+CONF_REFRESH_TOKEN_CREATED_AT = "refresh_token_created_at"
 CONF_USERNAME = "username"
 CONF_CONTROLLER_ID = "controller_id"
 CONF_CONTROLLER_SERIAL = "controller_serial"
 
 DEFAULT_SCAN_INTERVAL = timedelta(seconds=60)
+REFRESH_TOKEN_RENEW_INTERVAL = timedelta(days=10)
 
 RETENTION_POLICIES = ("rp_one_s", "rp_one_m")
 EXCLUDED_DEVICE_NODE_TYPES = {"smartgridController", "smartgridControllerSite", "switchboard"}

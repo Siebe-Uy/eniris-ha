@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import logging
 from typing import Any
 
@@ -12,7 +13,13 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import EnirisApiClient, EnirisAuthClient, EnirisAuthError, EnirisTwoFactorRequired
-from .const import CONF_CONTROLLER_ID, CONF_CONTROLLER_SERIAL, CONF_REFRESH_TOKEN, DOMAIN
+from .const import (
+    CONF_CONTROLLER_ID,
+    CONF_CONTROLLER_SERIAL,
+    CONF_REFRESH_TOKEN,
+    CONF_REFRESH_TOKEN_CREATED_AT,
+    DOMAIN,
+)
 from .models import EnirisController, group_controllers, parse_devices
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +52,7 @@ class EnirisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             try:
                 refresh_token = await auth_client.login(username, password)
+                token_created_at = _utcnow_iso()
                 api_client = EnirisApiClient(session, refresh_token, auth_client)
                 await api_client.async_get_access_token()
                 controllers = await _async_discover_controllers(api_client)
@@ -62,11 +70,13 @@ class EnirisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await self._async_import_additional_controllers(
                         username,
                         refresh_token,
+                        token_created_at,
                         controllers[1:],
                     )
                     return await self._async_create_controller_entry(
                         username,
                         refresh_token,
+                        token_created_at,
                         controllers[0],
                     )
 
@@ -96,12 +106,14 @@ class EnirisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
             password = user_input[CONF_PASSWORD]
+            old_refresh_token = entry.data[CONF_REFRESH_TOKEN]
 
             session = async_get_clientsession(self.hass)
             auth_client = EnirisAuthClient(session)
 
             try:
                 refresh_token = await auth_client.login(username, password)
+                token_created_at = _utcnow_iso()
                 api_client = EnirisApiClient(session, refresh_token, auth_client)
                 await api_client.async_get_access_token()
                 controllers = await _async_discover_controllers(api_client)
@@ -116,11 +128,19 @@ class EnirisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not _entry_controller_still_available(entry.data, controllers):
                     errors["base"] = "controller_not_found"
                 else:
+                    _async_update_entries_sharing_refresh_token(
+                        self.hass,
+                        old_refresh_token,
+                        refresh_token,
+                        token_created_at,
+                        username,
+                    )
                     return self.async_update_reload_and_abort(
                         entry,
                         data_updates={
                             CONF_USERNAME: username,
                             CONF_REFRESH_TOKEN: refresh_token,
+                            CONF_REFRESH_TOKEN_CREATED_AT: token_created_at,
                         },
                     )
 
@@ -148,10 +168,11 @@ class EnirisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self,
         username: str,
         refresh_token: str,
+        token_created_at: str,
         controller: EnirisController,
     ) -> config_entries.ConfigFlowResult:
         """Create the first controller-scoped entry."""
-        data = _entry_data(username, refresh_token, controller)
+        data = _entry_data(username, refresh_token, token_created_at, controller)
         controller_serial = data[CONF_CONTROLLER_SERIAL]
         await self.async_set_unique_id(controller_serial)
         self._abort_if_unique_id_configured()
@@ -161,6 +182,7 @@ class EnirisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self,
         username: str,
         refresh_token: str,
+        token_created_at: str,
         controllers: list[EnirisController],
     ) -> None:
         """Start import flows for the other controllers in the account."""
@@ -170,7 +192,7 @@ class EnirisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if entry.unique_id
         }
         for controller in controllers:
-            data = _entry_data(username, refresh_token, controller)
+            data = _entry_data(username, refresh_token, token_created_at, controller)
             if data[CONF_CONTROLLER_SERIAL] in configured:
                 continue
             self.hass.async_create_task(
@@ -191,12 +213,14 @@ async def _async_discover_controllers(api_client: EnirisApiClient) -> list[Eniri
 def _entry_data(
     username: str,
     refresh_token: str,
+    token_created_at: str,
     controller: EnirisController,
 ) -> dict[str, Any]:
     """Build config-entry data for one controller."""
     return {
         CONF_USERNAME: username,
         CONF_REFRESH_TOKEN: refresh_token,
+        CONF_REFRESH_TOKEN_CREATED_AT: token_created_at,
         CONF_CONTROLLER_ID: controller.id,
         CONF_CONTROLLER_SERIAL: controller.serial_number,
     }
@@ -216,3 +240,33 @@ def _entry_controller_still_available(
         or controller_serial == controller.serial_number
         for controller in controllers
     )
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _async_update_entries_sharing_refresh_token(
+    hass: Any,
+    old_refresh_token: str,
+    new_refresh_token: str,
+    token_created_at: str,
+    username: str,
+) -> None:
+    """Update sibling controller entries that were created from the same login."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_REFRESH_TOKEN) != old_refresh_token:
+            continue
+
+        hass.config_entries.async_update_entry(
+            entry,
+            data={
+                **entry.data,
+                CONF_USERNAME: username,
+                CONF_REFRESH_TOKEN: new_refresh_token,
+                CONF_REFRESH_TOKEN_CREATED_AT: token_created_at,
+            },
+        )
+        coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if coordinator is not None:
+            coordinator.api_client.update_refresh_token(new_refresh_token)
