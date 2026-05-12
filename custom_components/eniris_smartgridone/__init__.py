@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .api import EnirisApiClient, EnirisAuthClient
+from .api import EnirisApiClient, EnirisAuthClient, EnirisAuthError
 from .const import CONF_CONTROLLER_ID, CONF_CONTROLLER_SERIAL, CONF_REFRESH_TOKEN, DOMAIN, PLATFORMS
 from .models import clean_controller_serial, group_controllers, parse_devices
 
@@ -105,7 +105,13 @@ async def _async_migrate_account_entry(
     from homeassistant import config_entries
     from homeassistant.const import CONF_USERNAME
 
-    payload = await api_client.devices()
+    from homeassistant.exceptions import ConfigEntryAuthFailed
+
+    try:
+        payload = await api_client.devices()
+    except EnirisAuthError as err:
+        raise ConfigEntryAuthFailed(f"Eniris authentication failed: {err}") from err
+
     controllers = group_controllers(parse_devices(payload or {}))
     if not controllers:
         return False

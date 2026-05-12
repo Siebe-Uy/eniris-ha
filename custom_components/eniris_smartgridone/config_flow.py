@@ -76,6 +76,65 @@ class EnirisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> config_entries.ConfigFlowResult:
+        """Handle reauthentication when the stored refresh token is invalid."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Refresh credentials for an existing config entry."""
+        errors: dict[str, str] = {}
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        if entry is None:
+            return self.async_abort(reason="unknown")
+
+        username = entry.data.get(CONF_USERNAME, "")
+
+        if user_input is not None:
+            username = user_input[CONF_USERNAME].strip()
+            password = user_input[CONF_PASSWORD]
+
+            session = async_get_clientsession(self.hass)
+            auth_client = EnirisAuthClient(session)
+
+            try:
+                refresh_token = await auth_client.login(username, password)
+                api_client = EnirisApiClient(session, refresh_token, auth_client)
+                await api_client.async_get_access_token()
+                controllers = await _async_discover_controllers(api_client)
+            except EnirisTwoFactorRequired:
+                errors["base"] = "two_factor_required"
+            except EnirisAuthError:
+                errors["base"] = "invalid_auth"
+            except Exception:
+                _LOGGER.exception("Unexpected error refreshing Eniris credentials")
+                errors["base"] = "cannot_connect"
+            else:
+                if not _entry_controller_still_available(entry.data, controllers):
+                    errors["base"] = "controller_not_found"
+                else:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data_updates={
+                            CONF_USERNAME: username,
+                            CONF_REFRESH_TOKEN: refresh_token,
+                        },
+                    )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_USERNAME, default=username): str,
+                    vol.Required(CONF_PASSWORD): str,
+                }
+            ),
+            errors=errors,
+        )
+
     async def async_step_import(
         self, import_data: dict[str, Any]
     ) -> config_entries.ConfigFlowResult:
@@ -141,3 +200,19 @@ def _entry_data(
         CONF_CONTROLLER_ID: controller.id,
         CONF_CONTROLLER_SERIAL: controller.serial_number,
     }
+
+
+def _entry_controller_still_available(
+    entry_data: dict[str, Any], controllers: list[EnirisController]
+) -> bool:
+    """Return whether the refreshed account can still access this controller."""
+    controller_id = entry_data.get(CONF_CONTROLLER_ID)
+    controller_serial = entry_data.get(CONF_CONTROLLER_SERIAL)
+    if controller_id is None and controller_serial is None:
+        return bool(controllers)
+
+    return any(
+        controller_id in {controller.id, str(controller.device.id)}
+        or controller_serial == controller.serial_number
+        for controller in controllers
+    )

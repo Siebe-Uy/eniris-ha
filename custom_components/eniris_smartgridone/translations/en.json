@@ -8,10 +8,19 @@
           "username": "Email address",
           "password": "Password"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect to Eniris SmartgridOne",
+        "description": "The stored Eniris token is no longer valid. Enter your Eniris credentials to reconnect.",
+        "data": {
+          "username": "Email address",
+          "password": "Password"
+        }
       }
     },
     "error": {
       "cannot_connect": "Could not connect to Eniris. Please try again later.",
+      "controller_not_found": "This Eniris account no longer has access to the configured SmartgridOne controller.",
       "invalid_auth": "Invalid Eniris credentials.",
       "no_controllers": "No SmartgridOne controllers were found for this Eniris account.",
       "two_factor_required": "This Eniris account requires two-factor authentication, which is not supported by this integration yet.",

@@ -7,9 +7,10 @@ import logging
 from typing import Any, TypeVar
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import EnirisApiClient, EnirisApiError, EnirisRateLimitError
+from .api import EnirisApiClient, EnirisApiError, EnirisAuthError, EnirisRateLimitError
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, TELEMETRY_FIELDS
 from .models import EnirisController, EnirisDevice, TelemetrySource, group_controllers, parse_devices
 from .telemetry import SensorKey, SensorValue, build_query, parse_telemetry_responses
@@ -73,6 +74,8 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
                 device for device in controller.children if device.should_expose_as_device
             ]
             sensors = await self._async_fetch_sensor_values(controller_devices)
+        except EnirisAuthError as err:
+            raise ConfigEntryAuthFailed(f"Eniris authentication failed: {err}") from err
         except EnirisRateLimitError as err:
             raise UpdateFailed(f"Eniris rate limit reached: {err}") from err
         except EnirisApiError as err:
