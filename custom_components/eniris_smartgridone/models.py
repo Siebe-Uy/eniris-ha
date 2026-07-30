@@ -247,7 +247,26 @@ def parse_devices(payload: JsonObject) -> list[EnirisDevice]:
 
 def group_controllers(devices: list[EnirisDevice]) -> list[EnirisController]:
     """Group devices under their discovered SmartgridOne controllers."""
-    controllers = {device.node_id: EnirisController(device=device) for device in devices if device.is_controller}
+    # First pass: identify all controller devices
+    all_controllers = {device.node_id: device for device in devices if device.is_controller}
+
+    # Merge smartgridControllerSite devices into their parent smartgridController.
+    # A smartgridControllerSite is a site-level node that should not become a
+    # separate controller entry — its children belong to the parent controller.
+    merged_site_to_parent: dict[str, str] = {}
+    for node_id, device in list(all_controllers.items()):
+        if device.node_type == "smartgridControllerSite":
+            parent_node_id = device.controller_node_id
+            if parent_node_id and parent_node_id in all_controllers:
+                # The site will be merged into the parent controller; skip creating
+                # a separate controller for it.
+                merged_site_to_parent[node_id] = parent_node_id
+
+    controllers: dict[str, EnirisController] = {}
+    for node_id, device in all_controllers.items():
+        if node_id in merged_site_to_parent:
+            continue
+        controllers[node_id] = EnirisController(device=device)
 
     if not controllers and devices:
         # If the metadata does not expose controller devices, create a synthetic hub so
@@ -265,7 +284,7 @@ def group_controllers(devices: list[EnirisDevice]) -> list[EnirisController]:
             continue
         if not device.should_expose_as_device:
             continue
-        controller = _controller_for_device(device, controllers)
+        controller = _controller_for_device(device, controllers, merged_site_to_parent)
         if controller is not None:
             controller.children.append(device)
 
@@ -280,11 +299,17 @@ def clean_controller_serial(value: str) -> str:
 def _controller_for_device(
     device: EnirisDevice,
     controllers: dict[str, EnirisController],
+    merged_site_to_parent: dict[str, str] | None = None,
 ) -> EnirisController | None:
     """Find the most likely controller for a child device."""
     controller_id = device.controller_node_id
-    if controller_id and controller_id in controllers:
-        return controllers[controller_id]
+    if controller_id:
+        # If the child points to a merged smartgridControllerSite, resolve
+        # to the parent controller instead.
+        if merged_site_to_parent and controller_id in merged_site_to_parent:
+            controller_id = merged_site_to_parent[controller_id]
+        if controller_id in controllers:
+            return controllers[controller_id]
 
     if len(controllers) == 1:
         return next(iter(controllers.values()))
