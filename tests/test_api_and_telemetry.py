@@ -42,7 +42,7 @@ class TestApiAndTelemetry(TestCase):
                 "limit": 1,
                 "where": {
                     "time": [
-                        {"operator": ">=", "value": now_ms - 5 * 60_000},
+                        {"operator": ">=", "value": now_ms - 15 * 60_000},
                         {"operator": "<", "value": now_ms + 60_000},
                     ],
                     "tags": {"nodeId": "inverter-1"},

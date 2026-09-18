@@ -137,6 +137,45 @@ class TestEnirisModels(TestCase):
         self.assertEqual(len(device.telemetry_sources), 1)
         self.assertEqual(device.telemetry_sources[0].fields, ("actualPowerTot_W", "actualPowerL1_W", "voltageL1N_V", "currentL1_A"))
 
+    def test_only_devices_in_controller_node_tree_are_children(self) -> None:
+        """Stale nodes that the site no longer lists as children are skipped."""
+
+        def node(device_id, node_id, node_type, children=(), parents=()):
+            return {
+                "id": device_id,
+                "lastUpdate": "2026-09-17T13:36:40Z",
+                "properties": {
+                    "nodeId": node_id,
+                    "nodeType": node_type,
+                    "name": node_id,
+                    "nodeChildrenIds": list(children),
+                    "nodeParentsIds": list(parents),
+                },
+            }
+
+        devices = parse_devices(
+            {
+                "device": [
+                    node(1, "M1S", "smartgridController", ["M1S_site_0"]),
+                    node(2, "M1S_site_0", "smartgridControllerSite", ["meter-new"], ["M1S"]),
+                    node(3, "meter-new", "powerMeter", ["board"], ["M1S_site_0"]),
+                    node(4, "board", "switchboard", ["inverter"], ["meter-new"]),
+                    node(5, "inverter", "solarInverter", [], ["board"]),
+                    node(6, "meter-old", "powerMeter", ["board-old"], ["M1S_site_0"]),
+                    node(7, "board-old", "switchboard", ["battery-old"], ["meter-old"]),
+                    node(8, "battery-old", "battery", [], ["board-old"]),
+                ]
+            }
+        )
+
+        controllers = group_controllers(devices)
+
+        self.assertEqual(len(controllers), 1)
+        self.assertEqual(
+            sorted(child.node_id for child in controllers[0].children),
+            ["inverter", "meter-new"],
+        )
+
     def test_infrastructure_nodes_are_not_children(self) -> None:
         """Controller, controller site, and switchboard nodes are hidden."""
         devices = parse_devices(

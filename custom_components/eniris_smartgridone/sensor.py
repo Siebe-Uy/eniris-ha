@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 from typing import Any
 
@@ -36,6 +36,11 @@ ENERGY_DIRECTION_IMPORT = "imported"
 ENERGY_DIRECTION_EXPORT = "exported"
 EnergySourceKey = tuple[SensorKey, str]
 
+# Do not integrate power across gaps longer than this (e.g. an inverter asleep
+# overnight, or Home Assistant being down): the elapsed time would be multiplied
+# by a single sample and produce a large, wrong energy jump.
+MAX_INTEGRATION_GAP = timedelta(minutes=5)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -49,7 +54,7 @@ async def async_setup_entry(
 
     @callback
     def add_new_entities() -> None:
-        new_keys = set(coordinator.data.sensors) - known_keys
+        new_keys = _all_sensor_keys(coordinator) - known_keys
         new_energy_keys = _energy_helper_source_keys(coordinator) - known_energy_keys
         if not new_keys and not new_energy_keys:
             return
@@ -97,25 +102,10 @@ class EnirisSensor(CoordinatorEntity[EnirisDataUpdateCoordinator], SensorEntity)
         return sensor.value if sensor else None
 
     @property
-    def device_info(self) -> DeviceInfo:
+    def device_info(self) -> DeviceInfo | None:
         """Return Home Assistant device registry info."""
-        sensor = self.coordinator.data.sensors[self._key]
-        device = sensor.device
-        controller = _controller_for_device(self.coordinator, device)
-        is_controller = controller is not None and controller.device.id == device.id
-        identifier = f"controller_{controller.id}" if is_controller else f"device_{device.id}"
-
-        info: DeviceInfo = {
-            "identifiers": {(DOMAIN, identifier)},
-            "name": device.name,
-            "manufacturer": device.manufacturer or "Eniris",
-        }
-        if device.model:
-            info["model"] = device.model
-
-        if controller and controller.device.id != device.id:
-            info["via_device"] = (DOMAIN, f"controller_{controller.id}")
-        return info
+        device = _device_for_key(self.coordinator, self._key)
+        return _device_info(self.coordinator, device) if device else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -195,10 +185,10 @@ class EnirisIntegratedEnergySensor(
         return round(self._native_value, 3)
 
     @property
-    def device_info(self) -> DeviceInfo:
+    def device_info(self) -> DeviceInfo | None:
         """Attach the derived entity to the same device as its source sensor."""
-        source = self.coordinator.data.sensors[self._source_key]
-        return _device_info(self.coordinator, source.device)
+        device = _device_for_key(self.coordinator, self._source_key)
+        return _device_info(self.coordinator, device) if device else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -221,7 +211,10 @@ class EnirisIntegratedEnergySensor(
             return
 
         sample_time = _parse_timestamp(source.timestamp) or dt_util.utcnow()
-        if self._last_sample is not None and sample_time > self._last_sample:
+        if (
+            self._last_sample is not None
+            and self._last_sample < sample_time <= self._last_sample + MAX_INTEGRATION_GAP
+        ):
             try:
                 power_w = _directional_power(float(source.value), self._direction)
             except (TypeError, ValueError):
@@ -231,6 +224,23 @@ class EnirisIntegratedEnergySensor(
 
         self._last_sample = sample_time
         self.async_write_ha_state()
+
+
+def _all_sensor_keys(coordinator: EnirisDataUpdateCoordinator) -> set[SensorKey]:
+    """Return sensor keys from device metadata plus any with live data."""
+    return set(coordinator.data.expected) | set(coordinator.data.sensors)
+
+
+def _device_for_key(
+    coordinator: EnirisDataUpdateCoordinator,
+    key: SensorKey,
+) -> EnirisDevice | None:
+    """Return the Eniris device a sensor key belongs to."""
+    sensor = coordinator.data.sensors.get(key)
+    if sensor is not None:
+        return sensor.device
+    expected = coordinator.data.expected.get(key)
+    return expected[0] if expected else None
 
 
 def _controller_for_device(
@@ -314,7 +324,7 @@ def _energy_helper_source_keys(coordinator: EnirisDataUpdateCoordinator) -> set[
     """Return power sensor keys that need a derived cumulative energy entity."""
     return {
         (key, direction)
-        for key in coordinator.data.sensors
+        for key in _all_sensor_keys(coordinator)
         if _is_integrable_power_field(key.field)
         for direction in (ENERGY_DIRECTION_IMPORT, ENERGY_DIRECTION_EXPORT)
     }

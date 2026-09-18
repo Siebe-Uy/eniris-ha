@@ -17,9 +17,12 @@ _LOGGER = logging.getLogger(__name__)
 # condition the server assumes a worst-case range (since 2000-01-01 for rp_one_m,
 # about 140 tokens per field), which exceeds the free tier's 100-token bucket and
 # returns HTTP 422 "The calculated cost exceeds your tier's maximum capacity".
+# With limit=1 the cost is per started block of 1000 expected points (a "shard"),
+# so any window up to ~1000 points costs the same: ~16 min for rp_one_s and
+# ~16 h for rp_one_m.
 LATEST_LOOKBACK: dict[str, timedelta] = {
-    "rp_one_s": timedelta(minutes=5),
-    "rp_one_m": timedelta(minutes=15),
+    "rp_one_s": timedelta(minutes=15),
+    "rp_one_m": timedelta(hours=6),
 }
 DEFAULT_LOOKBACK = timedelta(hours=1)
 FUTURE_MARGIN = timedelta(minutes=1)

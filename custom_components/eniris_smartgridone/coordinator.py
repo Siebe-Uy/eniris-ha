@@ -34,6 +34,7 @@ class EnirisData:
 
     controllers: list[EnirisController] = field(default_factory=list)
     sensors: dict[SensorKey, SensorValue] = field(default_factory=dict)
+    expected: dict[SensorKey, tuple[EnirisDevice, TelemetrySource]] = field(default_factory=dict)
     companies: list[dict[str, Any]] = field(default_factory=list)
     roles: list[dict[str, Any]] = field(default_factory=list)
     monitors: list[dict[str, Any]] = field(default_factory=list)
@@ -85,6 +86,7 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
             controller_devices = [
                 device for device in controller.children if device.should_expose_as_device
             ]
+            expected = _expected_sensor_keys(controller_devices)
             sensors = await self._async_fetch_sensor_values(controller_devices)
         except EnirisAuthError as err:
             raise ConfigEntryAuthFailed(f"Eniris authentication failed: {err}") from err
@@ -96,6 +98,7 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
         return EnirisData(
             controllers=[controller],
             sensors=sensors,
+            expected=expected,
             companies=companies,
             roles=roles,
             monitors=monitors,
@@ -174,6 +177,23 @@ class EnirisDataUpdateCoordinator(DataUpdateCoordinator[EnirisData]):
             responses = await self.api_client.telemetry([query for _, _, query in chunk])
             values.update(parse_telemetry_responses(chunk, responses))
         return values
+
+
+def _expected_sensor_keys(
+    devices: list[EnirisDevice],
+) -> dict[SensorKey, tuple[EnirisDevice, TelemetrySource]]:
+    """Return one sensor key per field that device metadata says is recorded.
+
+    Entities are created from this, so a device shows up (as unavailable) even
+    when it has not reported recently, e.g. an inverter asleep at night.
+    """
+    expected: dict[SensorKey, tuple[EnirisDevice, TelemetrySource]] = {}
+    for device in devices:
+        for source in device.telemetry_sources:
+            for telemetry_field in source.fields or ():
+                if telemetry_field in TELEMETRY_FIELDS:
+                    expected[SensorKey(device.id, source.key, telemetry_field)] = (device, source)
+    return expected
 
 
 def _chunks(values: list[_T], size: int) -> list[list[_T]]:
