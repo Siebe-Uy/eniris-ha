@@ -24,7 +24,17 @@ CONF_USERNAME = "username"
 CONF_CONTROLLER_ID = "controller_id"
 CONF_CONTROLLER_SERIAL = "controller_serial"
 
-DEFAULT_SCAN_INTERVAL = timedelta(seconds=60)
+# The coordinator ticks every FAST_SCAN_INTERVAL and only queries the 1-second
+# (rp_one_s) streams on each tick. The 1-minute streams are queried when their
+# own interval is due, and device metadata is only refreshed occasionally.
+# Rough telemetry cost for a SmartgridOne with a P1 meter and an inverter:
+# ~5 tokens per fast tick + ~5 per minute tick = ~65 tokens/minute at 5 s,
+# inside the free tier's 100 tokens/minute.
+FAST_SCAN_INTERVAL = timedelta(seconds=5)
+MINUTE_SCAN_INTERVAL = timedelta(seconds=60)
+METADATA_REFRESH_INTERVAL = timedelta(minutes=5)
+FAST_RETENTION_POLICY = "rp_one_s"
+DEFAULT_SCAN_INTERVAL = FAST_SCAN_INTERVAL
 REFRESH_TOKEN_RENEW_INTERVAL = timedelta(days=10)
 
 RETENTION_POLICIES = ("rp_one_s", "rp_one_m")
