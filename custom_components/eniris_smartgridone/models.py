@@ -151,6 +151,14 @@ class EnirisDevice:
         return str(value) if value else None
 
     @property
+    def children_ids(self) -> list[str]:
+        """Return the node ids of this node's direct children."""
+        raw = self.properties.get("nodeChildrenIds")
+        if not isinstance(raw, list):
+            return []
+        return [str(item) for item in raw if item]
+
+    @property
     def should_expose_as_device(self) -> bool:
         """Return whether this node should become a HA device with entities."""
         return self.node_type not in EXCLUDED_DEVICE_NODE_TYPES and not self.is_controller
@@ -279,16 +287,46 @@ def group_controllers(devices: list[EnirisDevice]) -> list[EnirisController]:
             )
         )
 
+    # When the metadata describes a node tree (nodeChildrenIds), only devices that
+    # are reachable from a controller belong to it. Nodes left behind by earlier
+    # installs still point at the site via nodeParentsIds but are no longer listed
+    # as children, and never report telemetry again.
+    by_node_id = {device.node_id: device for device in devices}
+    reachable: dict[str, set[str]] = {}
+    for node_id in controllers:
+        tree = _reachable_node_ids(node_id, by_node_id)
+        if len(tree) > 1:
+            reachable[node_id] = tree
+
     for device in devices:
         if device.node_id in controllers:
             continue
         if not device.should_expose_as_device:
             continue
+        if reachable and not any(device.node_id in tree for tree in reachable.values()):
+            continue
         controller = _controller_for_device(device, controllers, merged_site_to_parent)
-        if controller is not None:
+        if controller is not None and (
+            controller.id not in reachable or device.node_id in reachable[controller.id]
+        ):
             controller.children.append(device)
 
     return list(controllers.values())
+
+
+def _reachable_node_ids(root: str, by_node_id: dict[str, EnirisDevice]) -> set[str]:
+    """Return node ids reachable from root via nodeChildrenIds (including root)."""
+    seen = {root}
+    stack = [root]
+    while stack:
+        device = by_node_id.get(stack.pop())
+        if device is None:
+            continue
+        for child_id in device.children_ids:
+            if child_id not in seen:
+                seen.add(child_id)
+                stack.append(child_id)
+    return seen
 
 
 def clean_controller_serial(value: str) -> str:

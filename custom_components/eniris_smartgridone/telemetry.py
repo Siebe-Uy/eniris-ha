@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Any
 
@@ -11,6 +11,21 @@ from .const import TELEMETRY_FIELDS
 from .models import EnirisDevice, TelemetrySource
 
 _LOGGER = logging.getLogger(__name__)
+
+# How far back a "latest value" query looks per retention policy.
+# Eniris prices telemetry queries by the estimated scanned range. Without a time
+# condition the server assumes a worst-case range (since 2000-01-01 for rp_one_m,
+# about 140 tokens per field), which exceeds the free tier's 100-token bucket and
+# returns HTTP 422 "The calculated cost exceeds your tier's maximum capacity".
+# With limit=1 the cost is per started block of 1000 expected points (a "shard"),
+# so any window up to ~1000 points costs the same: ~16 min for rp_one_s and
+# ~16 h for rp_one_m.
+LATEST_LOOKBACK: dict[str, timedelta] = {
+    "rp_one_s": timedelta(minutes=15),
+    "rp_one_m": timedelta(hours=6),
+}
+DEFAULT_LOOKBACK = timedelta(hours=1)
+FUTURE_MARGIN = timedelta(minutes=1)
 
 
 @dataclass(slots=True, frozen=True)
@@ -39,8 +54,12 @@ class SensorValue:
     timestamp: str | None = None
 
 
-def build_query(source: TelemetrySource, fields: list[str]) -> dict[str, Any] | None:
-    """Build one latest-value telemetry query."""
+def build_query(
+    source: TelemetrySource,
+    fields: list[str],
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Build one latest-value telemetry query bounded to a short time window."""
     selected_fields = [field for field in fields if source.fields is None or field in source.fields]
     if not selected_fields:
         return None
@@ -63,10 +82,23 @@ def build_query(source: TelemetrySource, fields: list[str]) -> dict[str, Any] | 
         "orderBy": "DESC",
         "limit": 1,
     }
+    now = now or datetime.now(timezone.utc)
+    lookback = LATEST_LOOKBACK.get(source.retention_policy, DEFAULT_LOOKBACK)
+    where: dict[str, Any] = {
+        "time": [
+            {"operator": ">=", "value": _to_ms(now - lookback)},
+            {"operator": "<", "value": _to_ms(now + FUTURE_MARGIN)},
+        ]
+    }
     if source.tags:
-        query["where"] = {"tags": source.tags}
+        where["tags"] = source.tags
+    query["where"] = where
 
     return query
+
+
+def _to_ms(value: datetime) -> int:
+    return int(value.timestamp() * 1000)
 
 
 def parse_telemetry_responses(

@@ -1,5 +1,6 @@
 """Tests for Eniris API helpers and telemetry parsing."""
 
+from datetime import datetime, timezone
 from unittest import TestCase
 
 from custom_components.eniris_smartgridone.api import normalize_token
@@ -24,7 +25,9 @@ class TestApiAndTelemetry(TestCase):
             tags={"nodeId": "inverter-1"},
         )
 
-        query = build_query(source, ["actualPowerTot_W"])
+        now = datetime(2026, 9, 18, 12, 0, tzinfo=timezone.utc)
+        query = build_query(source, ["actualPowerTot_W"], now=now)
+        now_ms = int(now.timestamp() * 1000)
 
         self.assertEqual(
             query,
@@ -37,7 +40,13 @@ class TestApiAndTelemetry(TestCase):
                 },
                 "orderBy": "DESC",
                 "limit": 1,
-                "where": {"tags": {"nodeId": "inverter-1"}},
+                "where": {
+                    "time": [
+                        {"operator": ">=", "value": now_ms - 15 * 60_000},
+                        {"operator": "<", "value": now_ms + 60_000},
+                    ],
+                    "tags": {"nodeId": "inverter-1"},
+                },
             },
         )
 
